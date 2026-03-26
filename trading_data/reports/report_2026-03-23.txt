@@ -1,0 +1,30 @@
+
+======================================================================
+              BOTTI TRADER v2.0 - REPORT
+======================================================================
+Datum: 2026-03-23 21:36
+
+PORTFOLIO
+---------
+Cash:           EUR    1000.00
+Positionen:     EUR       0.00
+Gesamtwert:     EUR    1000.00
+Performance:    EUR      +0.00 (+0.00%)
+
+OFFENE POSITIONEN
+-----------------
+   Keine offenen Positionen
+
+
+SIGNALE HEUTE
+-------------
+   AAPL: HOLD
+   TSLA: HOLD
+   NVDA: HOLD
+
+
+TRADES HEUTE
+-------------
+   Keine Trades
+
+======================================================================

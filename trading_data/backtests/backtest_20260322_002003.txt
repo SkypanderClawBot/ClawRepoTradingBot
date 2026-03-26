@@ -1,0 +1,106 @@
+
+======================================================================
+                    BACKTEST REPORT
+======================================================================
+
+ZEITRAUM
+--------
+Von:        2024-01-01
+Bis:        2025-03-22
+Dauer:      446 Tage
+
+KAPITAL
+-------
+Start:      EUR 10,000.00
+Ende:       EUR 10,966.91
+Gewinn:     EUR +966.91 (+9.67%)
+
+PERFORMANCE-METRIKEN
+--------------------
+Gesamt-Trades:      9
+Gewinn-Trades:      5
+Verlust-Trades:     4
+Win-Rate:           55.6%
+
+Avg. Gewinn:        +17.80%
+Avg. Verlust:       -7.53%
+Profit Factor:      1.88
+
+Max. Drawdown:      -6.18%
+Sharpe Ratio:       1.17
+
+VERGLEICH
+---------
+Strategie:          +9.67%
+Buy & Hold:         +54.28%
+Outperformance:     -44.61%
+
+======================================================================
+
+TRADE-HISTORIE
+----------------
+
+#1: AAPL
+  Einstieg:   2024-05-08 @ $181.09
+  Austieg:    2024-06-12 @ $211.43
+  Shares:     18
+  P&L:        $+546.17 (+16.76%)
+  Grund:      Take-Profit (15%)
+
+#2: TSLA
+  Einstieg:   2024-05-16 @ $174.84
+  Austieg:    2024-07-01 @ $209.86
+  Shares:     12
+  P&L:        $+420.24 (+20.03%)
+  Grund:      Take-Profit (15%)
+
+#3: NVDA
+  Einstieg:   2024-05-20 @ $94.73
+  Austieg:    2024-05-28 @ $113.84
+  Shares:     16
+  P&L:        $+305.76 (+20.17%)
+  Grund:      Take-Profit (15%)
+
+#4: AAPL
+  Einstieg:   2024-08-27 @ $226.54
+  Austieg:    2024-09-16 @ $214.91
+  Shares:     16
+  P&L:        $-186.14 (-5.14%)
+  Grund:      Stop-Loss (5%)
+
+#5: NVDA
+  Einstieg:   2024-09-06 @ $102.78
+  Austieg:    2024-09-12 @ $119.09
+  Shares:     24
+  P&L:        $+391.50 (+15.87%)
+  Grund:      Take-Profit (15%)
+
+#6: TSLA
+  Einstieg:   2024-09-23 @ $250.00
+  Austieg:    2024-10-11 @ $217.80
+  Shares:     15
+  P&L:        $-483.00 (-12.88%)
+  Grund:      Stop-Loss (5%)
+
+#7: NVDA
+  Einstieg:   2024-10-02 @ $118.80
+  Austieg:    2024-10-14 @ $138.02
+  Shares:     21
+  P&L:        $+403.46 (+16.17%)
+  Grund:      Take-Profit (15%)
+
+#8: AAPL
+  Einstieg:   2024-12-03 @ $241.33
+  Austieg:    2025-01-16 @ $227.02
+  Shares:     15
+  P&L:        $-214.68 (-5.93%)
+  Grund:      Stop-Loss (5%)
+
+#9: AAPL
+  Einstieg:   2025-03-06 @ $234.31
+  Austieg:    2025-03-11 @ $219.88
+  Shares:     15
+  P&L:        $-216.41 (-6.16%)
+  Grund:      Stop-Loss (5%)
+
+======================================================================

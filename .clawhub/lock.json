@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "skills": {
+    "ibkr": {
+      "version": "1.0.0",
+      "installedAt": 1774131374084
+    },
+    "memory-manager": {
+      "version": "1.0.0",
+      "installedAt": 1774288715319
+    }
+  }
+}

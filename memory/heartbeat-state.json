@@ -1,0 +1,11 @@
+{
+  "trader": {
+    "lastRuns": {
+      "09:00": null,
+      "21:00": null
+    },
+    "enabled": true,
+    "symbols": ["AAPL", "TSLA", "NVDA"],
+    "capital": 1000
+  }
+}

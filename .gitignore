@@ -1,0 +1,8 @@
+node_modules/
+.openclaw/
+.git/
+.secrets/
+*.pass
+himalaya/config.toml
+memory/*.md  # Private memory, optional
+BOOTSTRAP.md
