@@ -83,10 +83,10 @@ def adx(df: pd.DataFrame, period: int) -> pd.Series:
     plus_dm = pd.Series(plus_dm, index=df.index)
     minus_dm = pd.Series(minus_dm, index=df.index)
     tr = atr(df, period)
-    plus_di = 100 * (plus_dm.rolling(period).mean() / tr)
-    minus_di = 100 * (minus_dm.rolling(period).mean() / tr)
+    plus_di = 100 * (plus_dm.rolling(period, min_periods=1).mean() / tr)
+    minus_di = 100 * (minus_dm.rolling(period, min_periods=1).mean() / tr)
     dx = (np.abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
-    adx_val = dx.rolling(period).mean()
+    adx_val = dx.rolling(period, min_periods=1).mean()
     return adx_val
 
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
