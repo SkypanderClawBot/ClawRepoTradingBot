@@ -27,6 +27,7 @@ from typing import Dict, List, Optional, Tuple
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import joblib
 
 # ============================= Configuration =============================
 CONFIG = {
@@ -54,8 +55,8 @@ CONFIG = {
     "pair_lookback_base": 20,
     "pair_z_entry": 2.0,
     "pair_z_exit": 0.5,
-    # --- ML overlay (placeholder) ---------------------------------------
-    "use_ml": False,                 # set True when model is trained
+    # --- ML overlay ---------------------------------------------------
+    "use_ml": True,                  # set True when model is trained
     "ml_prob_threshold": 0.6,
     # --- Misc -----------------------------------------------------------
     "currency": "EUR",
@@ -266,10 +267,14 @@ class Strategy:
         if abs(z_kal) < self.cfg["pair_z_exit"]:
             return "FLAT", float(z_kal), f"Pair Z {z_kal:.2f} within exit band"
         return "HOLD", float(z_kal), ""
-    # placeholder ML
     def ml_prob(self, features: dict) -> float:
-        # In real implementation, load model and predict
-        return 0.5
+        if self.ml_model is None or self.ml_scaler is None:
+            return 0.5
+        # order: sma_diff, adx, atr_pct, rsi_norm
+        X = np.array([[features['sma_diff'], features['adx'], features['atr_pct'], features['rsi_norm']]])
+        X_scaled = self.ml_scaler.transform(X)
+        prob = self.ml_model.predict_proba(X_scaled)[0, 1]  # probability of class 1
+        return float(prob)
 
 # ============================= Main Engine =============================
 class Trader:
@@ -308,6 +313,23 @@ class Trader:
         self.strategy = Strategy(self.cfg)
         self.reports_dir = self.cfg["data_dir"] / "reports"
         self.reports_dir.mkdir(exist_ok=True)
+        # Load ML model if enabled
+        self.ml_model = None
+        self.ml_scaler = None
+        if self.cfg.get("use_ml", False):
+            model_path = Path(__file__).parent / "ml_model" / "logistic_model.pkl"
+            scaler_path = Path(__file__).parent / "ml_model" / "scaler.pkl"
+            if model_path.exists() and scaler_path.exists():
+                try:
+                    self.ml_model = joblib.load(model_path)
+                    self.ml_scaler = joblib.load(scaler_path)
+                    print("ML model loaded.")
+                except Exception as e:
+                    print(f"Failed to load ML model: {e}")
+                    self.ml_model = None
+                    self.ml_scaler = None
+            else:
+                print("ML model files not found, ML overlay disabled.")
     # -----------------------------------------------------------------
     def fetch_data(self, symbol: str, period: str = "400d") -> pd.DataFrame:
         df = yf.Ticker(symbol).history(period=period)
