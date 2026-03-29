@@ -92,7 +92,7 @@ def run_trader():
     
     try:
         result = subprocess.run(
-            ["python3", "/data/.openclaw/workspace/botti_trader.py"],
+            ["python3", "/data/.openclaw/workspace/trader_v5.py"],
             capture_output=True,
             text=True,
             cwd="/data/.openclaw/workspace",
