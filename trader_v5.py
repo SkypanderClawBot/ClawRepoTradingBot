@@ -56,7 +56,7 @@ CONFIG = {
     "pair_z_entry": 2.0,
     "pair_z_exit": 0.5,
     # --- ML overlay ---------------------------------------------------
-    "use_ml": True,                  # set True when model is trained
+    "use_ml": False,                 # set True when model is trained
     "ml_prob_threshold": 0.6,
     # --- Misc -----------------------------------------------------------
     "currency": "EUR",
