@@ -53,6 +53,10 @@ ORB_CONFIG = {
     "portfolio_file": Path(__file__).parent / "orb_trading_data" / "portfolio.json",
     "memory_file": Path(__file__).parent / "orb_trading_data" / "memory.md",
     "daily_stats_file": Path(__file__).parent / "orb_trading_data" / "daily_stats.json",
+    # --- Trading Filters ----------------------------------------------
+    "avoid_fridays": True,        # Avoid trading on Fridays (often lower quality)
+    "avoid_mondays": False,       # Avoid trading on Mondays (can be gap-sensitive)
+    "allowed_weekdays": [0, 1, 2, 3, 4],  # Monday=0, Sunday=6 (default: all weekdays)
 }
 
 # Ensure directories exist
@@ -62,26 +66,51 @@ ORB_CONFIG["data_dir"].mkdir(exist_ok=True)
 def is_market_hours(dt: datetime) -> bool:
     """Check if datetime is within market hours"""
     # For simplicity, we'll assume we're scanning during market hours
-    # In a real bot, this would check actual market hours
-    return True  # Allow trading during scan
+    # In a real bot with proper timezone handling, this would check actual market hours
+    return True  # Allow trading during scan (we'll rely on daily data approximation)
 
 def is_orb_period(dt: datetime) -> bool:
     """Check if datetime is within ORB calculation period"""
-    # For daily ORB calculation, we'll use the first period of the day
-    # Since we're doing end-of-day scans, we approximate ORB from available data
-    return True  # Simplified for daily ORB calculation
+    # For daily ORB calculation with daily data, we approximate
+    # Since we're doing end-of-day scans, we use previous day's range as ORB proxy
+    return True  # Simplified for daily ORB calculation with daily data
 
 def get_opening_range(df: pd.DataFrame) -> Tuple[float, float, float]:
     """
-    Calculate Opening Range approximation from daily data
-    For daily chart, we'll use the previous day's range as a proxy for today's ORB
-    (Standard ORB technique: today's breakout is compared to yesterday's range)
+    Calculate Opening Range from intraday data (first 30 minutes after market open)
     Returns: (ORB_high, ORB_low, ORB_range)
     """
     if df.empty:
         return 0.0, 0.0, 0.0
     
-    # Use previous day's high/low as ORB for today (standard ORB approach)
+    # Filter for first 30 minutes of trading day (9:30-10:00 ET)
+    # Assuming data is already in ET timezone or we can approximate
+    try:
+        # Try to filter by time if index is timezone aware
+        if hasattr(df.index, 'tz') and df.index.tz is not None:
+            # Convert to US/Eastern if needed
+            if str(df.index.tz) != 'US/Eastern':
+                df_et = df.tz_convert('US/Eastern')
+            else:
+                df_et = df
+        else:
+            # Assume data is already in ET or UTC, treat as ET for simplicity
+            df_et = df
+        
+        # Filter for ORB period (first 30 minutes after 9:30 ET open)
+        orb_mask = (df_et.index.time >= time(9, 30)) & (df_et.index.time < time(10, 0))
+        orb_df = df_et[orb_mask]
+        
+        if not orb_df.empty and len(orb_df) >= 2:
+            orb_high = orb_df["High"].max()
+            orb_low = orb_df["Low"].min()
+            orb_range = orb_high - orb_low
+            return orb_high, orb_low, orb_range
+    except Exception:
+        # Fallback to previous day's range if intraday filtering fails
+        pass
+    
+    # Fallback: Use previous day's high/low as ORB for today (standard ORB approach)
     if len(df) >= 2:
         # Use previous day's high/low as ORB for today
         prev_day = df.iloc[-2]
@@ -308,11 +337,15 @@ class ORBStrategy:
         avg_volume = df["Volume_MA"].iloc[-1] if len(df) > 0 and not np.isnan(df["Volume_MA"].iloc[-1]) else 1
         volume_ratio = recent_volume / avg_volume if avg_volume > 0 else 0
         
+        # For daily data approximation, we estimate bars in ORB period
+        # In a real implementation with intraday data, this would be actual count
+        bars_in_orb_estimate = 6 if len(df) > 0 else 0  # Approximate 6 5-min bars in 30 minutes
+        
         context = {
             "volume_ratio": volume_ratio,
             "volume_confirmed": volume_ratio >= self.cfg["volume_multiplier"],
             "orb_range_pct": (orb_range / orb_low * 100) if orb_low > 0 else 0,
-            "bars_in_orb": len(df[df.index.to_series().apply(lambda x: is_orb_period(x))]) if len(df) > 0 else 0
+            "bars_in_orb": bars_in_orb_estimate
         }
         
         return orb_high, orb_low, orb_range, context
@@ -420,6 +453,14 @@ class ORB_Bot:
             elif self.portfolio.can_trade_today():
                 signal, strength, reason, context = self.strategy.generate_signal(df)
                 if signal == "BUY" and strength > 0.3:  # Minimum strength threshold
+                    # Apply weekday filters
+                    current_weekday = datetime.now().weekday()  # Monday=0, Sunday=6
+                    if self.cfg.get("avoid_fridays", False) and current_weekday == 4:  # Friday
+                        print(f"  {sym}: SKIPPED (Friday filter)")
+                        continue
+                    if self.cfg.get("avoid_mondays", False) and current_weekday == 0:  # Monday
+                        print(f"  {sym}: SKIPPED (Monday filter)")
+                        continue
                     # Calculate stop loss based on ORB range or ATR
                     orb_high, orb_low, orb_range, _ = self.strategy.calculate_orb_levels(df)
                     atr_value = df["ATR"].iloc[-1] if not np.isnan(df["ATR"].iloc[-1]) else orb_range
