@@ -77,53 +77,62 @@ def is_orb_period(dt: datetime) -> bool:
 
 def get_opening_range(df: pd.DataFrame) -> Tuple[float, float, float]:
     """
-    Calculate Opening Range from intraday data (first 30 minutes after market open)
+    Calculate Opening Range from intraday data (first 30 minutes after market open TODAY)
     Returns: (ORB_high, ORB_low, ORB_range)
     """
     if df.empty:
         return 0.0, 0.0, 0.0
     
-    # Filter for first 30 minutes of trading day (9:30-10:00 ET)
-    # Assuming data is already in ET timezone or we can approximate
     try:
-        # Try to filter by time if index is timezone aware
+        # Convert to ET if needed
         if hasattr(df.index, 'tz') and df.index.tz is not None:
-            # Convert to US/Eastern if needed
             if str(df.index.tz) != 'US/Eastern':
                 df_et = df.tz_convert('US/Eastern')
             else:
                 df_et = df
         else:
-            # Assume data is already in ET or UTC, treat as ET for simplicity
-            df_et = df
+            # Assume UTC or naive, localize to ET
+            df_et = df.tz_localize('UTC').tz_convert('US/Eastern') if df.index.tz is None else df
         
-        # Filter for ORB period (first 30 minutes after 9:30 ET open)
-        orb_mask = (df_et.index.time >= time(9, 30)) & (df_et.index.time < time(10, 0))
-        orb_df = df_et[orb_mask]
+        # Filter for TODAY's data first
+        today = datetime.now().date()
+        today_mask = df_et.index.date == today
+        today_df = df_et[today_mask]
+        
+        if today_df.empty:
+            raise ValueError("No data for today")
+        
+        # Filter for ORB period (9:30-10:00 ET) within today's data
+        orb_mask = (today_df.index.time >= time(9, 30)) & (today_df.index.time < time(10, 0))
+        orb_df = today_df[orb_mask]
         
         if not orb_df.empty and len(orb_df) >= 2:
             orb_high = orb_df["High"].max()
             orb_low = orb_df["Low"].min()
             orb_range = orb_high - orb_low
             return orb_high, orb_low, orb_range
-    except Exception:
-        # Fallback to previous day's range if intraday filtering fails
+            
+    except Exception as e:
+        print(f"ORB calculation error: {e} - using fallback")
         pass
     
-    # Fallback: Use previous day's high/low as ORB for today (standard ORB approach)
+    # Fallback 1: Previous day's high/low as ORB proxy
     if len(df) >= 2:
-        # Use previous day's high/low as ORB for today
         prev_day = df.iloc[-2]
         orb_high = prev_day["High"]
         orb_low = prev_day["Low"]
-    else:
-        # Fallback to current day if we don't have previous day (first day of data)
+        orb_range = orb_high - orb_low
+        return orb_high, orb_low, orb_range
+    
+    # Fallback 2: Current day's range
+    if not df.empty:
         current_day = df.iloc[-1]
         orb_high = current_day["High"]
         orb_low = current_day["Low"]
+        orb_range = orb_high - orb_low
+        return orb_high, orb_low, orb_range
     
-    orb_range = orb_high - orb_low
-    return orb_high, orb_low, orb_range
+    return 0.0, 0.0, 0.0
 
 def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     """Calculate Average True Range"""
