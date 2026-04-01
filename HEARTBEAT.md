@@ -18,7 +18,7 @@ Bei jedem Heartbeat:
 
 ## Trading Zeiten
 - **Botti Trader (Original):** 08:00-22:00 - Stündlicher Scan + Report senden (auch wenn HOLD)
-- **ORB_Bot (Neu):** Täglich um 15:30 CEST (US-Marktstart 9:30 AM ET)
+- **ORB_Bot (Neu):** Alle 30 Minuten während 15:30-22:00 CEST (US-Handelszeit 9:30-16:00 ET)
 - **Memory Organizer:** Täglich 23:00
 
 ## Letzte Laeufe

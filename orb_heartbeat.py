@@ -46,14 +46,23 @@ def run_orb_bot():
         return False
 
 def should_run():
-    """Prüfen ob es Zeit für den US-Marktstart ist (9:30 ET = 15:30 CEST)"""
+    """Prüfen ob wir innerhalb der US-Handelszeit sind und alle 30 Minuten laufen sollen"""
     now = datetime.now()
-    # US Markt öffnet um 9:30 ET, das ist 15:30 CEST (UTC+2)
-    # Wir laufen um 15:30 CEST täglich
-    target_hour = 15
-    target_minute = 30
     
-    return now.hour == target_hour and now.minute == target_minute
+    # US-Handelszeit: 9:30 ET - 16:00 ET = 15:30 CEST - 22:00 CEST (UTC+2)
+    start_hour, start_minute = 15, 30  # 15:30 CEST
+    end_hour, end_minute = 22, 0       # 22:00 CEST
+    
+    current_time = now.hour * 60 + now.minute
+    start_time = start_hour * 60 + start_minute
+    end_time = end_hour * 60 + end_minute
+    
+    # Prüfen ob wir im Handelszeitfenster sind
+    if not (start_time <= current_time < end_time):
+        return False
+    
+    # Alle 30 Minuten laufen (Minute 00 oder 30)
+    return now.minute in [0, 30]
 
 def main():
     if should_run():
