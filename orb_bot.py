@@ -130,7 +130,7 @@ def get_opening_range(df: pd.DataFrame) -> Tuple[float, float, float]:
     orb_df = df[df['date'] == orb_date]
     
     # Nur 9:30–10:00 ET
-    orb_mask = (orb_df.index.time >= time(9, 30)) & (orb_df.index.time < time(10, 0))
+    orb_mask = (orb_df.index.time >= datetime.time(9, 30)) & (orb_df.index.time < datetime.time(10, 0))
     orb_period = orb_df[orb_mask]
 
     if len(orb_period) >= 2:
@@ -679,10 +679,217 @@ class ORB_Bot:
             "memory_file": str(self.cfg["memory_file"])
         }
 
+# ============================= BACKTESTER =============================
+import pandas as pd
+from datetime import datetime, timedelta
+import time
+
+class ORB_Backtester:
+    def __init__(self, config: dict = None):
+        self.cfg = config or ORB_CONFIG
+        self.portfolio = ORBPortfolio(self.cfg)
+        self.strategy = ORBStrategy(self.cfg)
+        self.commission_rate = 0.00005 # 0.005 %
+        self.slippage_rate = 0.0002 # 0.02 %
+
+    def _download_chunked_5m(self, symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
+        """Lädt 5m-Daten monatsweise (yfinance-Limit umgehen)"""
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d")
+        all_dfs = []
+ 
+        current = start
+        print(f"Downloading {symbol}...")
+        while current < end:
+            chunk_end = min(current + timedelta(days=59), end) # max ~60 Tage pro Call
+            try:
+                df = yf.Ticker(symbol).history(
+                    start=current.strftime("%Y-%m-%d"),
+                    end=chunk_end.strftime("%Y-%m-%d"),
+                    interval="5m"
+                )
+                if not df.empty:
+                    all_dfs.append(df)
+                    print(f"Downloaded up to {chunk_end.date()}", end=" ")
+            except Exception as e:
+                print(f"Error {symbol} {current.date()}: {e}")
+            
+            current = chunk_end + timedelta(days=1)
+            time.sleep(0.5) # höflich zu Yahoo
+        
+        if not all_dfs:
+            return pd.DataFrame()
+        
+        df = pd.concat(all_dfs)
+        df = df[["Open", "High", "Low", "Close", "Volume"]]
+        df = df[~df.index.duplicated(keep='first')]
+        return df
+
+    def run_backtest(self, start_date: str = "2024-01-01", end_date: str = None):
+        """Haupt-Backtest"""
+        if end_date is None:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+        
+        print(f"\n=== ORB_Backtester – {start_date} bis {end_date} ===\n")
+        
+        # Daten für alle Symbole laden
+        data_cache = {}
+        for sym in self.cfg["symbols"]:
+            print(f"Lade Daten für {sym}...")
+            df = self._download_chunked_5m(sym, start_date, end_date)
+            if len(df) > 100:
+                data_cache[sym] = compute_indicators(df)
+                print(f" ✓ {len(df)} 5m-Bars geladen")
+            else:
+                print(f" ✗ Zu wenig Daten für {sym}")
+        
+        # Portfolio zurücksetzen
+        self.portfolio.data = self.portfolio._load()
+        self.portfolio.data["cash"] = self.cfg["initial_capital"]
+        self.portfolio.data["positions"] = {}
+        self.portfolio.data["trades"] = []
+        
+        # Bar-by-Bar Simulation (nur nach 10:00 ET)
+        all_dates = pd.date_range(start_date, end_date, freq='B')
+        
+        for current_date in all_dates:
+            date_str = current_date.strftime("%Y-%m-%d")
+            weekday = current_date.weekday()
+            
+            # Weekday-Filter (wie im Live-Bot)
+            if self.cfg.get("avoid_fridays") and weekday == 4:
+                continue
+            if self.cfg.get("avoid_mondays") and weekday == 0:
+                continue
+            
+            price_dict = {}
+            signals_generated = []
+            
+            for sym, df_full in data_cache.items():
+                # Nur Bars bis heute
+                day_df = df_full[df_full.index.date == current_date.date()]
+                if day_df.empty or len(day_df) < 20:
+                    continue
+                
+                df = day_df.copy()
+                current_price = df["Close"].iloc[-1]
+                price_dict[sym] = current_price
+                
+                # Position managen
+                if self.portfolio.has_pos(sym):
+                    pos = self.portfolio.get_pos(sym)
+                    self._manage_position(sym, pos, current_price, df)
+                
+                # Neues Signal nur nach ORB-Ende
+                elif self.portfolio.can_trade_today():
+                    orb_high, orb_low, orb_range, _ = self.strategy.calculate_orb_levels(df)
+                    if orb_range <= 0:
+                        continue
+                    
+                    signal, strength, reason, context = self.strategy.generate_signal(df)
+                    
+                    if signal == "BUY" and strength > 0.3:
+                        atr_value = df["ATR"].iloc[-1] if not np.isnan(df["ATR"].iloc[-1]) else orb_range
+                        stop_loss_or_low = orb_low
+                        stop_loss_atr = current_price - (1.5 * atr_value)
+                        stop_loss = max(stop_loss_or_low, stop_loss_atr)
+                        if stop_loss >= current_price:
+                            stop_loss = current_price - atr_value
+                        
+                        shares = self.portfolio.calculate_position_size(
+                            current_price, stop_loss, self.portfolio.equity(price_dict)
+                        )
+                        
+                        if shares > 0:
+                            # Kosten simulieren
+                            cost = current_price * shares * (1 + self.commission_rate + self.slippage_rate)
+                            if cost <= self.portfolio.data["cash"]:
+                                res = self.portfolio.buy(sym, current_price, shares, stop_loss, reason)
+                                if res["ok"]:
+                                    signals_generated.append({
+                                        "symbol": sym, "action": "BUY", "shares": shares,
+                                        "price": current_price, "stop_loss": stop_loss, "reason": reason
+                                    })
+            
+            # Equity für diesen Tag speichern
+            equity = self.portfolio.equity(price_dict)
+            self.portfolio.data["equity_curve"].append({
+                "date": date_str,
+                "equity": equity
+            })
+        
+        # Ergebnisse auswerten
+        self._print_backtest_results()
+        self._save_backtest_report(start_date, end_date)
+        
+        return self.portfolio.data["trades"]
+
+    def _manage_position(self, sym: str, pos: dict, current_price: float, df: pd.DataFrame):
+        """Position management for backtest (uses live bot logic)"""
+        # Use the live bot's management logic
+        bot = ORB_Bot(self.cfg)
+        bot.portfolio.data = self.portfolio.data  # Use backtest portfolio
+        bot.portfolio._save_daily_stats = lambda: None  # Disable stats save for backtest
+        bot._manage_position(sym, pos, current_price, df)
+
+    def _print_backtest_results(self):
+        """Pretty results output"""
+        trades = self.portfolio.data["trades"]
+        if not trades:
+            print("Keine Trades ausgeführt.")
+            return
+        
+        df_trades = pd.DataFrame(trades)
+        wins = df_trades[df_trades["pnl"] > 0]
+        
+        total_return = (self.portfolio.equity({}) / self.cfg["initial_capital"] - 1) * 100
+        win_rate = len(wins) / len(df_trades) * 100 if len(df_trades) > 0 else 0
+        gross_profit = wins["pnl"].sum()
+        gross_loss = df_trades[df_trades["pnl"] < 0]["pnl"].sum()
+        profit_factor = abs(gross_profit / gross_loss) if gross_loss != 0 else float('inf')
+        
+        equity_curve = pd.DataFrame(self.portfolio.data["equity_curve"])
+        equity_curve["date"] = pd.to_datetime(equity_curve["date"])
+        equity_curve.set_index("date", inplace=True)
+        max_dd = ((equity_curve["equity"] / equity_curve["equity"].cummax()) - 1).min() * 100
+        
+        print("\n" + "="*70)
+        print("ORB_BACKTEST RESULTS")
+        print("="*70)
+        print(f"Zeitraum : {self.portfolio.data['equity_curve'][0]['date']} – {self.portfolio.data['equity_curve'][-1]['date']}")
+        print(f"Startkapital : {self.cfg['initial_capital']:,.0f} EUR")
+        print(f"Endkapital : {self.portfolio.equity({}):,.0f} EUR")
+        print(f"Gesamtrendite : {total_return:+.2f} %")
+        print(f"Trades : {len(df_trades)}")
+        print(f"Win-Rate : {win_rate:.1f} %")
+        print(f"Profit-Faktor : {profit_factor:.2f}")
+        print(f"Max. Drawdown : {max_dd:.2f} %")
+        print(f"Durchschnittlicher Trade: {df_trades['pnl'].mean():+.2f} EUR")
+        print("="*70)
+
+    def _save_backtest_report(self, start_date: str, end_date: str):
+        report_file = self.cfg["data_dir"] / f"backtest_{start_date}_{end_date}.txt"
+        with open(report_file, "w") as f:
+            f.write("ORB_Backtester – Full Report\n")
+            f.write("="*60 + "\n")
+            f.write(f"Zeitraum: {start_date} – {end_date}\n")
+            f.write(f"Symbole: {', '.join(self.cfg['symbols'])}\n\n")
+            f.write("Trades:\n")
+            for t in self.portfolio.data["trades"]:
+                f.write(f"{t['time']} {t['symbol']} {t['action']} {t['shares']} @ {t['price']:.2f} | P&L: {t['pnl']:+.2f}\n")
+        print(f"\n✅ Vollständiger Bericht gespeichert: {report_file}")
+
+# ============================= Neue Entrypoints =============================
+def run_backtest_mode():
+    bot = ORB_Bot() # nur zum Initialisieren der Config
+    tester = ORB_Backtester(bot.cfg)
+    tester.run_backtest(start_date="2024-01-01", end_date="2025-04-01") # ← hier anpassen!
+
 # ============================= Entrypoint =============================
 def main():
     bot = ORB_Bot()
     bot.run_orb_scan()
 
 if __name__ == "__main__":
-    main()
+    # run_backtest_mode() # Backtest
+    main() # Live
