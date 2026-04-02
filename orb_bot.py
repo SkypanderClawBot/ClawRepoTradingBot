@@ -141,7 +141,7 @@ def get_opening_range(df: pd.DataFrame) -> Tuple[float, float, float]:
     orb_df = df[df['date'] == orb_date]
     
     # Nur 9:30–10:00 ET
-    orb_mask = (orb_df.index.time >= datetime.time(9, 30)) & (orb_df.index.time < datetime.time(10, 0))
+    orb_mask = (orb_df.index.dt.hour * 100 + orb_df.index.dt.minute >= 930) & (orb_df.index.dt.hour * 100 + orb_df.index.dt.minute < 1000)
     orb_period = orb_df[orb_mask]
 
     if len(orb_period) >= 2:
