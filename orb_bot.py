@@ -15,6 +15,28 @@ import numpy as np
 import pytz
 
 # ============================= Configuration =============================
+import os
+from pathlib import Path
+
+TELEGRAM_TOKEN_PATH = Path.home() / ".secrets" / "telegram.token"
+TELEGRAM_CHAT_ID_PATH = Path.home() / ".secrets" / "telegram.chat_id"
+
+def send_telegram(message: str) -> None:
+    """Send a message via Telegram bot."""
+    try:
+        token = TELEGRAM_TOKEN_PATH.read_text().strip()
+        chat_id = TELEGRAM_CHAT_ID_PATH.read_text().strip()
+        import urllib.request
+        import urllib.parse
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = urllib.parse.urlencode({"chat_id": chat_id, "text": message}).encode()
+        req = urllib.request.Request(url, data=data)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resp.read()
+    except Exception as e:
+        # Fail silently to not break trading logic
+        print(f"[Telegram] Failed to send message: {e}")
+
 ORB_CONFIG = {
     # --- Universe for day trading (liquid stocks/ETFs) ------------------
     # Based on backtest results (2024-01-01 to 2026-03-31):
@@ -141,7 +163,7 @@ def get_opening_range(df: pd.DataFrame) -> Tuple[float, float, float]:
     orb_df = df[df['date'] == orb_date]
     
     # Nur 9:30–10:00 ET
-    orb_mask = (orb_df.index.dt.hour * 100 + orb_df.index.dt.minute >= 930) & (orb_df.index.dt.hour * 100 + orb_df.index.dt.minute < 1000)
+    orb_mask = (orb_df.index.hour * 100 + orb_df.index.minute >= 930) & (orb_df.index.hour * 100 + orb_df.index.minute < 1000)
     orb_period = orb_df[orb_mask]
 
     if len(orb_period) >= 2:
@@ -316,6 +338,8 @@ class ORBPortfolio:
             pass
         
         self._log_trade(sym, "SELL", shares, price, pnl, reason)
+        if action == "SELL":
+            send_telegram(f"ORB_Bot SELL {sym} {shares} @ {price:.2f} (Pself._log_trade(sym, "SELL", shares, price, pnl, reason)L: {pnl:+.2f}) - {reason}")
         self._update_daily_stats("exit", pnl)
         self.save()
         return {"ok": True, "pnl": pnl, "remaining": pos.get("shares", 0)}
@@ -539,6 +563,7 @@ class ORB_Bot:
                                 "reason": reason,
                                 "strength": strength
                             })
+                            send_telegram(f"ORB_Bot BUY {sym} {shares} @ {current_price:.2f} (SL: {stop_loss:.2f}) - {reason}")
                         else:
                             print(f"  {sym}: FAILED BUY - {res.get('msg', 'Unknown error')}")
                     else:
